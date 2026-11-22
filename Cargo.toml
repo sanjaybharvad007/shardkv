@@ -1,0 +1,19 @@
+[package]
+name = "shardkv"
+version = "0.1.0"
+edition = "2021"
+description = "Sharded in-memory key-value store with a binary TCP protocol, built on Tokio"
+license = "MIT"
+
+[dependencies]
+ahash = "0.8"
+bytes = "1"
+hashbrown = "0.15"
+hdrhistogram = { version = "7", default-features = false }
+parking_lot = "0.12"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "signal", "time", "macros"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = 1
