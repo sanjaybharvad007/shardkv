@@ -1,0 +1,20 @@
+store benchmark: 131072 keys, 128-byte values, 10 cores, 2 s per cell
+
+throughput, million ops/s, 95% reads
+    shards     1 thr     2 thr     4 thr     8 thr    16 thr
+         1     61.10     28.51     19.96      7.12      6.86
+        16     61.89     51.53     65.29     48.32     48.69
+       256     57.68     70.91    105.37    101.53    111.38
+
+throughput, million ops/s, 50% reads
+    shards     1 thr     2 thr     4 thr     8 thr    16 thr
+         1     24.66     16.29     10.20      6.32      4.94
+        16     24.03     26.11     39.28     30.69     30.25
+       256     22.68     26.16     40.91     34.75     35.18
+
+heap allocations per operation
+  get (hit)                     0.000
+  get (miss)                    0.000
+  set (overwrite)               1.000
+  set (new key)                 2.001
+  del (hit)                     0.000
