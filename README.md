@@ -1,105 +1,212 @@
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=6AD3F7&center=true&vCenter=true&width=700&lines=Software+Engineer+%7C+Data+Engineer;Building+Distributed+Systems+%26+Data+Pipelines;C%2B%2B+Systems+%2B+Python+at+Scale;MS+Data+Science+%40+San+Jose+State+University)](https://git.io/typing-svg)
+# shardkv
 
----
+A sharded in-memory key-value store in Rust, served over TCP with a small
+binary protocol on Tokio.
 
-## 👋 About Me
+```
+client ──TCP──► connection task ──► parse (borrowed, no allocation)
+                 (one per socket)         │
+                                          ▼
+                                   hash key once
+                                          │
+                       ┌──────────┬───────┴──┬──────────┐
+                       ▼          ▼          ▼          ▼
+                    shard 0    shard 1     ...      shard N-1
+                    RwLock +   RwLock +             RwLock +
+                    table      table                table
+```
 
-I'm a **Software Engineer / Data Engineer and MS Data Science student at San Jose State University**, working across the stack that moves and serves data — distributed pipelines, cloud warehousing, and performance-critical backend services. My work spans **Python data engineering, C++ systems programming, and SQL/warehouse modeling**.
+## What it does
 
-- 🎓 **MS Data Science** @ San Jose State University *(Aug 2024 – May 2026)* <!-- TODO: fix if different -->
-- 🔄 Build end-to-end data paths: ingestion → transformation → warehouse → serving
-- ☁️ ETL pipelines pulling live market data into **Snowflake** via the Alpha Vantage API
-- ⚙️ Low-level systems work in **C++** — buffered I/O, thread safety, high-throughput write paths
-- 🧱 Distributed processing with batching, retries, and fault tolerance
-- 📫 Reach me at **your.email@example.com** <!-- TODO: your real email -->
+- **GET / SET / DEL / PING / STATS** over a length-prefixed binary protocol
+  with pipelining (`src/protocol.rs` has the full format).
+- **Sharded store.** Keys are spread over a power-of-two number of hash
+  tables, each behind its own reader-writer lock, so two operations contend
+  only when they hit the same shard and one of them writes.
+- **Bounded resources.** Frames over a size limit are refused from the header
+  alone, before the body is buffered. Connections over a limit are closed on
+  accept. Pending responses are flushed at a high-water mark.
+- **Graceful shutdown.** On Ctrl-C the server stops accepting, lets each
+  connection finish the requests it has already received, then exits.
 
----
+## Build and run
 
-## 🔗 Connect With Me
+Requires stable Rust (tested with 1.97).
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/sanjay-bharvad-70b1a724a/)
-[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sanjaybharvad007)
-[![Gmail](https://img.shields.io/badge/Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:your.email@example.com)
+```bash
+cargo test                       # 11 unit tests, 9 end-to-end tests
+cargo build --release
 
----
+./target/release/shardkv-server --addr 127.0.0.1:7878
+./target/release/shardkv-bench  --addr 127.0.0.1:7878 --pipeline 16   # in another terminal
+./target/release/storebench                                           # store only, no network
+```
 
-## 🛠️ Tech Stack
+Every binary takes `--help`. As a library:
 
-### Languages
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![C++](https://img.shields.io/badge/C++-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
-![SQL](https://img.shields.io/badge/SQL-4479A1?style=for-the-badge&logo=postgresql&logoColor=white)
-![Java](https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
-![Bash](https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
+```rust
+let mut client = shardkv::Client::connect("127.0.0.1:7878").await?;
+client.set(b"greeting", b"hello").await?;
+assert_eq!(client.get(b"greeting").await?.as_deref(), Some(&b"hello"[..]));
 
-### Data Engineering & Warehousing
-![Snowflake](https://img.shields.io/badge/Snowflake-29B5E8?style=for-the-badge&logo=snowflake&logoColor=white)
-![Airflow](https://img.shields.io/badge/Airflow-017CEE?style=for-the-badge&logo=apacheairflow&logoColor=white)
-![Kafka](https://img.shields.io/badge/Apache%20Kafka-231F20?style=for-the-badge&logo=apachekafka&logoColor=white)
-![Spark](https://img.shields.io/badge/Spark-E25A1C?style=for-the-badge&logo=apachespark&logoColor=white)
-![dbt](https://img.shields.io/badge/dbt-FF694B?style=for-the-badge&logo=dbt&logoColor=white)
+// Pipelining: one write, replies in request order.
+client.queue_get(b"a")?;
+client.queue_get(b"b")?;
+let replies = client.flush().await?;
+```
 
-### Backend & Systems
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazonaws&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
-![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
-![Multithreading](https://img.shields.io/badge/Multithreading-00599C?style=for-the-badge)
+## Design decisions
 
-### Databases
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+**Parsing borrows; it does not copy.** `Request<'a>` holds slices into the
+connection's read buffer, so decoding a request allocates nothing. The
+lifetime ties each request to the buffer it came from, and the compiler
+rejects any attempt to keep a request after the buffer is advanced.
 
-### Data Science
-![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
-![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white)
-![Jupyter](https://img.shields.io/badge/Jupyter-F37626?style=for-the-badge&logo=jupyter&logoColor=white)
+**One hash per operation.** The key is hashed once and the same hash selects
+the shard and probes the table (`hashbrown::HashTable` accepts a precomputed
+hash; the standard `HashMap` would hash again).
 
----
+**The allocator is kept out of the critical section.** `set` allocates the
+value before taking the write lock. A replaced or deleted entry is moved out
+under the lock and freed after it is released.
 
-## 🚀 Featured Projects
+**Synchronous locks inside async tasks.** Shard locks are `parking_lot`
+locks, never held across an `.await`. The critical section is one hash-table
+probe; an async mutex would cost more than the work it protects.
 
-### 🔄 [Distributed Data Pipeline](https://github.com/sanjaybharvad007/distributed-data-pipeline)
-Distributed ingestion and processing pipeline in Python handling batched and streaming workloads, with retry logic and fault tolerance across workers.
-`Python` `Kafka` `Docker` <!-- TODO: add a hard number — records/sec, latency, throughput -->
+**Two kinds of protocol error.** A frame with a bad length means the byte
+stream can no longer be trusted, so the server reports the error and closes.
+A well-delimited frame with bad contents (unknown opcode, empty key) gets an
+ERROR response and the connection continues.
 
-### ❄️ [Alpha Vantage → Snowflake ETL](https://github.com/sanjaybharvad007/alpha-vantage-snowflake)
-End-to-end ETL that pulls market data from the Alpha Vantage API, stages and validates it, and loads it into Snowflake for downstream analytics.
-`Python` `Snowflake` `REST API` `SQL`
+**Statistics are batched.** Each connection counts operations in local
+integers and adds them to the shared atomic counters once per batch of
+requests, so cores do not contend on a counter cache line for every request.
 
-### ⚙️ [C++ Log Engine](https://github.com/sanjaybharvad007/cpp-log-engine)
-High-throughput logging engine in modern C++ — buffered I/O, thread-safe write paths, and low-allocation design.
-`C++` `Multithreading` `Systems`
+## Measurements
 
-### 📈 [MyStock](https://github.com/sanjaybharvad007/MyStock)
-Stock market analysis and forecasting — time-series feature engineering, model comparison, and backtesting.
-`Python` `Pandas` `scikit-learn` `Jupyter`
+Finding 2 was measured on a 10-core Apple Silicon MacBook Air. Everything
+else is from a 2-vCPU shared cloud VM with client and server on the same
+machine over loopback. That VM is small and noisy: repeated runs differ by
+tens of percent. Treat its numbers as evidence of behaviour, and rerun on
+your own hardware for numbers worth quoting. Raw output is in `results/`.
 
-### 🎓 [CheckMyGrade](https://github.com/sanjaybharvad007/CheckMyGrade)
-Student grade management system with full CRUD, search/sort, and performance-tested data access.
-`Python` `OOP` `Unit Testing`
+### Finding 1: the first read of every value was allocating under a lock
 
----
+`storebench` wraps the global allocator and counts heap allocations per
+operation. The first version stored values as `bytes::Bytes`:
 
-## 💼 Experience
+| Operation | Allocations, `Bytes` | Allocations, `Arc<[u8]>` |
+|---|---:|---:|
+| GET (hit) | 1 on first read of each value | 0 |
+| GET (miss) | 0 | 0 |
+| SET (overwrite) | 1 | 1 |
+| SET (new key) | 2 | 2 |
+| DEL | 0 | 0 |
 
-<!-- TODO: replace with your real roles -->
-- **[Role] — [Company]** *(Month Year – Month Year)*: What you built, and the measurable impact.
-- **[Role] — [Company]** *(Month Year – Month Year)*: What you built, and the measurable impact.
+`Bytes::copy_from_slice` defers allocating its shared reference count until
+the first clone, and that clone happened inside `get`, while holding the
+shard's read lock. Storing `Arc<[u8]>` puts the count and the data in a
+single allocation at write time. Single-threaded read-heavy throughput went
+from about 16 to about 21 million operations per second.
 
----
+### Finding 2: one lock collapses as threads are added; shards scale
 
-## 📊 GitHub Stats
+In-process, 131,072 keys, 128-byte values, million operations per second, on
+a 10-core Apple Silicon MacBook Air (`results/storebench-m-series.txt`).
 
-![GitHub Stats](https://github-readme-stats.vercel.app/api?username=sanjaybharvad007&show_icons=true&theme=tokyonight&hide_border=true)
-![Top Languages](https://github-readme-stats.vercel.app/api/top-langs/?username=sanjaybharvad007&layout=compact&theme=tokyonight&hide_border=true)
+95% reads:
 
----
+| Shards | 1 thread | 2 | 4 | 8 | 16 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 61.1 | 28.5 | 20.0 | 7.1 | 6.9 |
+| 16 | 61.9 | 51.5 | 65.3 | 48.3 | 48.7 |
+| 256 | 57.7 | 70.9 | 105.4 | 101.5 | 111.4 |
 
-![](https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=100&section=footer)
+50% reads:
 
-**Thanks for visiting! If you find my work interesting, feel free to ⭐ a repo or connect on [LinkedIn](https://www.linkedin.com/in/sanjay-bharvad-70b1a724a/)**
+| Shards | 1 thread | 2 | 4 | 8 | 16 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 24.7 | 16.3 | 10.2 | 6.3 | 4.9 |
+| 16 | 24.0 | 26.1 | 39.3 | 30.7 | 30.3 |
+| 256 | 22.7 | 26.2 | 40.9 | 34.8 | 35.2 |
+
+With a single shard, every added thread makes the store slower: at 16
+threads the read-heavy workload runs at about a ninth of its single-thread
+speed, because every operation bounces the same lock word between cores.
+With 256 shards the same workload goes from 57.7 to 105.4 million operations
+per second at four threads, and at 16 threads it is 16 times faster than the
+single-shard store.
+
+Scaling is well short of linear: four threads give about 1.8 times one
+thread, and more threads add little. The cause has not been isolated.
+Candidates are the machine's mix of performance and efficiency cores, memory
+latency (the keys and values do not fit in cache), contention on shard lock
+words that even readers must write, and, for the write-heavy workload, the
+system allocator, since every SET allocates. The 16-shard rows sitting well
+below the 256-shard rows suggest lock-word contention is part of it.
+
+### Finding 3: over the network, the store is not the bottleneck
+
+32 connections, 90% reads, 128-byte values, closed loop:
+
+| Setup | Requests/s | p50 | p99 |
+|---|---:|---:|---:|
+| 256 shards, no pipelining | 161,000 | 0.19 ms | 0.33 ms |
+| 256 shards, pipeline of 16 | 1,783,000 | 0.28 ms | 0.51 ms |
+| 1 shard, pipeline of 16 | 1,760,000 | 0.28 ms | 0.63 ms |
+
+Pipelining raised throughput about elevenfold, because the server answers a
+whole batch with one read and one write. The shard count made no measurable
+difference to throughput here: a store operation takes tens of nanoseconds
+and a request's share of the network path takes hundreds, so on two cores
+the lock is never the limit. Sharding matters once there are enough cores
+for the store to be contended, which Finding 2 shows in isolation.
+
+### Tail latency at a fixed request rate
+
+Open loop: requests are sent on a schedule regardless of replies, and
+latency is measured from each request's scheduled time, so server stalls are
+not hidden. 32 connections, 256 shards:
+
+| Offered rate | p50 | p99 | p99.9 | max |
+|---:|---:|---:|---:|---:|
+| 20,000/s | 0.16 ms | 0.22 ms | 0.42 ms | 0.69 ms |
+| 100,000/s | 0.14 ms | 0.21 ms | 0.86 ms | 2.08 ms |
+| 200,000/s | 0.15 ms | 0.26 ms | 1.84 ms | 3.43 ms |
+| 400,000/s | 0.16 ms | 0.23 ms | 1.06 ms | 3.01 ms |
+
+About 0.1 ms of every figure is the load generator's own timer error, which
+is counted as latency by design. A first version of the generator used
+Tokio's timers and reported a p50 above 1 ms; the extra millisecond was the
+timer's resolution, not the server. The schedule is now driven by an OS
+thread (see `ticker` in `src/bin/shardkv-bench.rs`).
+
+## Limitations
+
+- **In-memory only.** No persistence, replication, or eviction; memory grows
+  until keys are deleted.
+- **No TTLs, no transactions, no multi-key operations.**
+- **No authentication or TLS.** Bind to localhost or a trusted network.
+- **Network benchmarks ran on one small VM**, with the client competing with
+  the server for the same two vCPUs. They have not been repeated on larger
+  hardware.
+- **An error reply before a forced close can be lost** if the client is
+  still sending when the server closes the socket.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/protocol.rs` | Wire format, zero-copy parser, encoder |
+| `src/store.rs` | Sharded concurrent map |
+| `src/server.rs` | Tokio server, connection loop, shutdown |
+| `src/client.rs` | Async client with pipelining |
+| `src/bin/shardkv-server.rs` | Server binary |
+| `src/bin/shardkv-bench.rs` | Network load generator (closed and open loop) |
+| `src/bin/storebench.rs` | In-process throughput and allocation benchmark |
+| `tests/server.rs` | End-to-end tests against a real server |
+
+## License
+
+MIT
